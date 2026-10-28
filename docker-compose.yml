@@ -42,7 +42,13 @@ services:
           path: backend-server.py
           target: /festhub/backend-server.py
         - action: rebuild
-          path: festhub.proto
+          path: concerts/concerts.proto
+        - action: rebuild
+          path: artists/artists.proto
+        - action: rebuild
+          path: categories/categories.proto
+        - action: rebuild
+          path: media/media.proto
         - action: rebuild
           path: requirements.txt
 
@@ -70,7 +76,13 @@ services:
           path: templates
           target: /festhub/templates
         - action: rebuild
-          path: festhub.proto
+          path: concerts/concerts.proto
+        - action: rebuild
+          path: artists/artists.proto
+        - action: rebuild
+          path: categories/categories.proto
+        - action: rebuild
+          path: media/media.proto
         - action: rebuild
           path: requirements.txt
 

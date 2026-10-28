@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package festhub.concerts;
+
+import "google/protobuf/empty.proto";
+
+// ============================================================
+// Service
+// ============================================================
+
+service ConcertService {
+  rpc CreateConcert(CreateConcertRequest) returns (IdResponse);
+  rpc ShowConcerts(ShowConcertsRequest) returns (ShowConcertsResponse);
+  rpc UpdateConcert(UpdateConcertRequest) returns (google.protobuf.Empty);
+  rpc DeleteConcert(DeleteConcertRequest) returns (DeleteConcertResponse);
+}
+
+// ============================================================
+// Messages
+// ============================================================
+
+// Returned by create operations.
+message IdResponse {
+  string id = 1;
+}
+
+message Concert {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  int32 available_tickets = 4;
+
+  // Stored in the database as integer cents.
+  int64 ticket_price_cents = 5;
+
+  repeated string artist_ids = 6;
+  repeated string category_ids = 7;
+  repeated string media_ids = 8;
+}
+
+message CreateConcertRequest {
+  string name = 1;
+  string description = 2;
+  int32 available_tickets = 3;
+
+  // Decimal string, e.g. "25.50", matching the CLI input.
+  string ticket_price = 4;
+
+  // Empty means generate an ID.
+  string custom_id = 5;
+
+  repeated string artist_ids = 6;
+  repeated string category_ids = 7;
+  repeated string media_ids = 8;
+}
+
+message ShowConcertsRequest {
+  // Empty means show all concerts.
+  string id = 1;
+}
+
+message ShowConcertsResponse {
+  repeated Concert concerts = 1;
+}
+
+message UpdateConcertRequest {
+  string id = 1;
+
+  // Absent fields remain unchanged.
+  optional string name = 2;
+  optional string description = 3;
+  optional int32 available_tickets = 4;
+  optional string ticket_price = 5;
+
+  repeated string add_artist_ids = 6;
+  repeated string remove_artist_ids = 7;
+
+  repeated string add_category_ids = 8;
+  repeated string remove_category_ids = 9;
+
+  repeated string add_media_ids = 10;
+  repeated string remove_media_ids = 11;
+}
+
+message DeleteConcertRequest {
+  string id = 1;
+}
+
+message DeleteConcertResponse {
+  // Media deleted through the event's cascade.
+  repeated string deleted_media_ids = 1;
+
+  // Categories deleted because no events still use them.
+  repeated string deleted_category_ids = 2;
+}

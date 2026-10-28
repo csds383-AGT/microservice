@@ -14,8 +14,14 @@ if LOGIC_DIR.is_dir():
     sys.path.insert(0, str(LOGIC_DIR))
 
 import services
-import festhub_pb2 
-import festhub_pb2_grpc 
+import concerts_pb2
+import concerts_pb2_grpc
+import artists_pb2
+import artists_pb2_grpc
+import categories_pb2
+import categories_pb2_grpc
+import media_pb2
+import media_pb2_grpc
 
 PORT = int(os.getenv("BUSINESS_PORT", "50051"))
 # the address to listen on and the only address allowed to call us; docker-compose.yml sets these to the
@@ -35,7 +41,7 @@ def string_id(value):
 
 
 def to_concert(record):
-    return festhub_pb2.Concert(
+    return concerts_pb2.Concert(
         id=string_id(field(record, "id")),
         name=field(record, "name", ""),
         description=field(record, "description", ""),
@@ -49,7 +55,7 @@ def to_concert(record):
 
 
 def to_artist(record):
-    return festhub_pb2.Artist(
+    return artists_pb2.Artist(
         id=string_id(field(record, "id")),
         name=field(record, "name", ""),
         booking_contact=field(record, "booking_contact", ""),
@@ -58,7 +64,7 @@ def to_artist(record):
 
 
 def to_category(record):
-    return festhub_pb2.Category(
+    return categories_pb2.Category(
         id=string_id(field(record, "id")),
         name=field(record, "name", ""),
         description=field(record, "description", ""),
@@ -67,7 +73,7 @@ def to_category(record):
 
 
 def to_media(record):
-    return festhub_pb2.Media(
+    return media_pb2.Media(
         id=string_id(field(record, "id")),
         event_id=string_id(field(record, "event_id")),
         image_url=field(record, "image_url", ""),
@@ -110,8 +116,7 @@ def invoke(context, function, *args, **kwargs):
         abort_for_error(context, error)
 
 
-class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
-    # Concerts
+class ConcertService(concerts_pb2_grpc.ConcertServiceServicer):
     def CreateConcert(self, request, context):
         result = invoke(
             context, services.create_concert,
@@ -124,11 +129,11 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
             category_ids=list(request.category_ids),
             media_ids=list(request.media_ids),
         )
-        return festhub_pb2.IdResponse(id=string_id(result))
+        return concerts_pb2.IdResponse(id=string_id(result))
 
     def ShowConcerts(self, request, context):
         records = invoke(context, services.find_concerts, request.id or None)
-        return festhub_pb2.ShowConcertsResponse(concerts=[to_concert(x) for x in records])
+        return concerts_pb2.ShowConcertsResponse(concerts=[to_concert(x) for x in records])
 
     def UpdateConcert(self, request, context):
         invoke(
@@ -149,12 +154,13 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
 
     def DeleteConcert(self, request, context):
         media_ids, category_ids = invoke(context, services.delete_concert, request.id)
-        return festhub_pb2.DeleteConcertResponse(
+        return concerts_pb2.DeleteConcertResponse(
             deleted_media_ids=[string_id(x) for x in media_ids],
             deleted_category_ids=[string_id(x) for x in category_ids],
         )
 
-    # Artists
+
+class ArtistService(artists_pb2_grpc.ArtistServiceServicer):
     def CreateArtist(self, request, context):
         result = invoke(
             context, services.create_artist,
@@ -163,11 +169,11 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
             custom_id=request.custom_id or None,
             event_ids=list(request.event_ids),
         )
-        return festhub_pb2.IdResponse(id=string_id(result))
+        return artists_pb2.IdResponse(id=string_id(result))
 
     def ShowArtists(self, request, context):
         records = invoke(context, services.find_artists, request.id or None)
-        return festhub_pb2.ShowArtistsResponse(artists=[to_artist(x) for x in records])
+        return artists_pb2.ShowArtistsResponse(artists=[to_artist(x) for x in records])
 
     def UpdateArtist(self, request, context):
         invoke(
@@ -184,7 +190,8 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
         invoke(context, services.delete_artist, request.id)
         return empty_pb2.Empty()
 
-    # Categories
+
+class CategoryService(categories_pb2_grpc.CategoryServiceServicer):
     def CreateCategory(self, request, context):
         result = invoke(
             context, services.create_category,
@@ -193,11 +200,11 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
             custom_id=request.custom_id or None,
             event_ids=list(request.event_ids),
         )
-        return festhub_pb2.IdResponse(id=string_id(result))
+        return categories_pb2.IdResponse(id=string_id(result))
 
     def ShowCategories(self, request, context):
         records = invoke(context, services.find_categories, request.id or None)
-        return festhub_pb2.ShowCategoriesResponse(categories=[to_category(x) for x in records])
+        return categories_pb2.ShowCategoriesResponse(categories=[to_category(x) for x in records])
 
     def UpdateCategory(self, request, context):
         invoke(
@@ -214,7 +221,8 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
         invoke(context, services.delete_category, request.id)
         return empty_pb2.Empty()
 
-    # Media
+
+class MediaService(media_pb2_grpc.MediaServiceServicer):
     def CreateMedia(self, request, context):
         result = invoke(
             context, services.create_media,
@@ -222,11 +230,11 @@ class FestHubService(festhub_pb2_grpc.FestHubServiceServicer):
             image_url=request.image_url,
             custom_id=request.custom_id or None,
         )
-        return festhub_pb2.IdResponse(id=string_id(result))
+        return media_pb2.IdResponse(id=string_id(result))
 
     def ShowMedia(self, request, context):
         records = invoke(context, services.find_media, request.id or None)
-        return festhub_pb2.ShowMediaResponse(media=[to_media(x) for x in records])
+        return media_pb2.ShowMediaResponse(media=[to_media(x) for x in records])
 
     def UpdateMedia(self, request, context):
         invoke(
@@ -273,7 +281,11 @@ def serve():
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     # one worker, because every request shares repository's single database connection
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1), interceptors=[PresentationTierOnly()])
-    festhub_pb2_grpc.add_FestHubServiceServicer_to_server(FestHubService(), server)
+    # all four services run in this one process until each gets its own container
+    concerts_pb2_grpc.add_ConcertServiceServicer_to_server(ConcertService(), server)
+    artists_pb2_grpc.add_ArtistServiceServicer_to_server(ArtistService(), server)
+    categories_pb2_grpc.add_CategoryServiceServicer_to_server(CategoryService(), server)
+    media_pb2_grpc.add_MediaServiceServicer_to_server(MediaService(), server)
     bound_port = server.add_insecure_port(f"{BIND_ADDRESS}:{PORT}")
     if bound_port == 0:
         raise RuntimeError(f"Could not bind gRPC server to {BIND_ADDRESS}:{PORT}")

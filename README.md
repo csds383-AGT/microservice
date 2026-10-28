@@ -12,7 +12,7 @@
    ```bash
    docker compose up --build --watch
    ```
-   the first run takes a few minutes: it builds the three images, generates the gRPC code from `festhub.proto` inside them, and creates the database from `db/schema.sql` and `db/seed.sql`. after that it starts in seconds
+   the first run takes a few minutes: it builds the three images, generates the gRPC code from the `.proto` files in `concerts/`, `artists/`, `categories/` and `media/` inside them, and creates the database from `db/schema.sql` and `db/seed.sql`. after that it starts in seconds
 4. open http://localhost:5001
 5. press ctrl+c to stop
 
@@ -28,7 +28,7 @@ nothing else needs installing on your machine, since python, the gRPC code and p
 
 ## dev notes
 
-while it's running, saved changes to `website.py`, `templates/`, `backend-server.py`, and `logic/` show up on their own, and changes to `festhub.proto` or `requirements.txt` rebuild the containers.
+while it's running, saved changes to `website.py`, `templates/`, `backend-server.py`, and `logic/` show up on their own, and changes to any of the `.proto` files or `requirements.txt` rebuild the containers.
 
 to reset the database to the demo data (needed whenever `db/schema.sql` or `db/seed.sql` changes):
 

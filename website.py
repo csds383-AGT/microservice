@@ -2,8 +2,14 @@ import os
 from flask import Flask, abort, jsonify, render_template, request
 import json
 import grpc
-import festhub_pb2
-import festhub_pb2_grpc
+import concerts_pb2
+import concerts_pb2_grpc
+import artists_pb2
+import artists_pb2_grpc
+import categories_pb2
+import categories_pb2_grpc
+import media_pb2
+import media_pb2_grpc
 from decimal import Decimal, InvalidOperation
 import logging
 
@@ -12,13 +18,21 @@ import logging
 app = Flask(__name__)
 GRPC_TARGET = f"{os.getenv('BUSINESS_HOST', 'localhost')}:{os.getenv('BUSINESS_PORT', '50051')}"
 channel = grpc.insecure_channel(GRPC_TARGET) # use insecure channel for development, switch to TLS for production
-backend = festhub_pb2_grpc.FestHubServiceStub(channel)
+# all four services run in the logic container for now, so their stubs share one channel
+stubs = [
+    concerts_pb2_grpc.ConcertServiceStub(channel),
+    artists_pb2_grpc.ArtistServiceStub(channel),
+    categories_pb2_grpc.CategoryServiceStub(channel),
+    media_pb2_grpc.MediaServiceStub(channel),
+]
+# RPC names are unique across the services, so rpc() can look a method up by its name alone
+backend = {name: method for stub in stubs for name, method in vars(stub).items()}
 RPC_TIMEOUT_SECONDS = float(os.getenv("GRPC_TIMEOUT_SECONDS", "3"))
 
 def rpc(method, payload):
     """Call an RPC with a deadline and translate gRPC failures for HTTP clients."""
     try:
-        return getattr(backend, method)(payload, timeout=RPC_TIMEOUT_SECONDS)
+        return backend[method](payload, timeout=RPC_TIMEOUT_SECONDS)
     except grpc.RpcError as error:
         code = error.code()
         message = error.details() or "The backend request failed."
@@ -112,12 +126,12 @@ def front_page():
     return render_template("frontpage.html")
 
 def fetch_concerts(concert_id=""):
-    response = rpc("ShowConcerts", festhub_pb2.ShowConcertsRequest(id=concert_id))
+    response = rpc("ShowConcerts", concerts_pb2.ShowConcertsRequest(id=concert_id))
     return list(response.concerts)
 
 
 def fetch_artists():
-    response = rpc("ShowArtists", festhub_pb2.ShowArtistsRequest())
+    response = rpc("ShowArtists", artists_pb2.ShowArtistsRequest())
     return [{
         "id": x.id, "name": x.name, "booking_contact": x.booking_contact,
         "event_ids": list(x.event_ids),
@@ -125,7 +139,7 @@ def fetch_artists():
 
 
 def fetch_categories():
-    response = rpc("ShowCategories", festhub_pb2.ShowCategoriesRequest())
+    response = rpc("ShowCategories", categories_pb2.ShowCategoriesRequest())
     return [{
         "id": x.id, "name": x.name, "description": x.description,
         "event_ids": list(x.event_ids),
@@ -134,7 +148,7 @@ def fetch_categories():
 
 def fetch_media(concerts):
     event_names = {c.id: c.name for c in concerts}
-    response = rpc("ShowMedia", festhub_pb2.ShowMediaRequest())
+    response = rpc("ShowMedia", media_pb2.ShowMediaRequest())
     return [{
         "id": x.id, "event_id": x.event_id, "image_url": x.image_url,
         "name": x.image_url,
@@ -227,7 +241,7 @@ def api_index():
 def create_concert():
     def action():
         data = get_json()
-        response = rpc("CreateConcert", festhub_pb2.CreateConcertRequest(
+        response = rpc("CreateConcert", concerts_pb2.CreateConcertRequest(
             name=str(required(data, "name")),
             description=str(data.get("description") or ""),
             available_tickets=int(required(data, "available_tickets")),
@@ -269,7 +283,7 @@ def update_concert():
         if current is None:
             abort(404, description=f"Concert not found: {concert_id}")
 
-        payload = festhub_pb2.UpdateConcertRequest(id=concert_id)
+        payload = concerts_pb2.UpdateConcertRequest(id=concert_id)
         if data.get("name") is not None:
             payload.name = str(data["name"])
         if data.get("description") is not None:
@@ -290,7 +304,7 @@ def update_concert():
 def delete_concert():
     def action():
         data = get_json()
-        response = rpc("DeleteConcert", festhub_pb2.DeleteConcertRequest(id=str(required(data, "event_id"))))
+        response = rpc("DeleteConcert", concerts_pb2.DeleteConcertRequest(id=str(required(data, "event_id"))))
         return {"ok": True, "deleted_media_ids": list(response.deleted_media_ids),
                 "deleted_category_ids": list(response.deleted_category_ids)}
     return api_action(action)
@@ -301,7 +315,7 @@ def delete_concert():
 def create_artist():
     def action():
         data = get_json()
-        response = rpc("CreateArtist", festhub_pb2.CreateArtistRequest(
+        response = rpc("CreateArtist", artists_pb2.CreateArtistRequest(
             name=str(required(data, "name")),
             booking_contact=str(required(data, "booking_contact")),
             custom_id=str(data.get("custom_id") or ""),
@@ -315,7 +329,7 @@ def create_artist():
 def update_artist():
     def action():
         data = get_json()
-        payload = festhub_pb2.UpdateArtistRequest(id=str(required(data, "artist_id")))
+        payload = artists_pb2.UpdateArtistRequest(id=str(required(data, "artist_id")))
         if data.get("name") is not None:
             payload.name = str(data["name"])
         if data.get("booking_contact") is not None:
@@ -331,7 +345,7 @@ def update_artist():
 def delete_artist():
     def action():
         data = get_json()
-        rpc("DeleteArtist", festhub_pb2.DeleteArtistRequest(id=str(required(data, "artist_id"))))
+        rpc("DeleteArtist", artists_pb2.DeleteArtistRequest(id=str(required(data, "artist_id"))))
         return {"ok": True}
     return api_action(action)
 
@@ -341,7 +355,7 @@ def delete_artist():
 def create_category():
     def action():
         data = get_json()
-        response = rpc("CreateCategory", festhub_pb2.CreateCategoryRequest(
+        response = rpc("CreateCategory", categories_pb2.CreateCategoryRequest(
             name=str(required(data, "name")),
             description=str(data.get("description") or ""),
             custom_id=str(data.get("custom_id") or ""),
@@ -355,7 +369,7 @@ def create_category():
 def update_category():
     def action():
         data = get_json()
-        payload = festhub_pb2.UpdateCategoryRequest(id=str(required(data, "category_id")))
+        payload = categories_pb2.UpdateCategoryRequest(id=str(required(data, "category_id")))
         if data.get("name") is not None:
             payload.name = str(data["name"])
         if data.get("description") is not None:
@@ -371,7 +385,7 @@ def update_category():
 def delete_category():
     def action():
         data = get_json()
-        rpc("DeleteCategory", festhub_pb2.DeleteCategoryRequest(id=str(required(data, "category_id"))))
+        rpc("DeleteCategory", categories_pb2.DeleteCategoryRequest(id=str(required(data, "category_id"))))
         return {"ok": True}
     return api_action(action)
 
@@ -381,7 +395,7 @@ def delete_category():
 def create_media():
     def action():
         data = get_json()
-        response = rpc("CreateMedia", festhub_pb2.CreateMediaRequest(
+        response = rpc("CreateMedia", media_pb2.CreateMediaRequest(
             event_id=str(required(data, "event_id")),
             image_url=str(required(data, "image_url")),
             custom_id=str(data.get("custom_id") or ""),
@@ -394,7 +408,7 @@ def create_media():
 def update_media():
     def action():
         data = get_json()
-        payload = festhub_pb2.UpdateMediaRequest(id=str(required(data, "media_id")))
+        payload = media_pb2.UpdateMediaRequest(id=str(required(data, "media_id")))
         if data.get("event_id") is not None:
             payload.event_id = str(data["event_id"])
         if data.get("image_url") is not None:
@@ -408,7 +422,7 @@ def update_media():
 def delete_media():
     def action():
         data = get_json()
-        rpc("DeleteMedia", festhub_pb2.DeleteMediaRequest(id=str(required(data, "media_id"))))
+        rpc("DeleteMedia", media_pb2.DeleteMediaRequest(id=str(required(data, "media_id"))))
         return {"ok": True}
     return api_action(action)
 

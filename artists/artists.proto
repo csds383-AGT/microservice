@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package festhub.artists;
+
+import "google/protobuf/empty.proto";
+
+// ============================================================
+// Service
+// ============================================================
+
+service ArtistService {
+  rpc CreateArtist(CreateArtistRequest) returns (IdResponse);
+  rpc ShowArtists(ShowArtistsRequest) returns (ShowArtistsResponse);
+  rpc UpdateArtist(UpdateArtistRequest) returns (google.protobuf.Empty);
+  rpc DeleteArtist(DeleteArtistRequest) returns (google.protobuf.Empty);
+}
+
+// ============================================================
+// Messages
+// ============================================================
+
+// Returned by create operations.
+message IdResponse {
+  string id = 1;
+}
+
+message Artist {
+  string id = 1;
+  string name = 2;
+  string booking_contact = 3;
+  repeated string event_ids = 4;
+}
+
+message CreateArtistRequest {
+  string name = 1;
+  string booking_contact = 2;
+  string custom_id = 3;
+  repeated string event_ids = 4;
+}
+
+message ShowArtistsRequest {
+  // Empty means show all artists.
+  string id = 1;
+}
+
+message ShowArtistsResponse {
+  repeated Artist artists = 1;
+}
+
+message UpdateArtistRequest {
+  string id = 1;
+
+  optional string name = 2;
+  optional string booking_contact = 3;
+
+  repeated string add_event_ids = 4;
+  repeated string remove_event_ids = 5;
+}
+
+message DeleteArtistRequest {
+  string id = 1;
+}

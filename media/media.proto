@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package festhub.media;
+
+import "google/protobuf/empty.proto";
+
+// ============================================================
+// Service
+// ============================================================
+
+service MediaService {
+  rpc CreateMedia(CreateMediaRequest) returns (IdResponse);
+  rpc ShowMedia(ShowMediaRequest) returns (ShowMediaResponse);
+  rpc UpdateMedia(UpdateMediaRequest) returns (google.protobuf.Empty);
+  rpc DeleteMedia(DeleteMediaRequest) returns (google.protobuf.Empty);
+}
+
+// ============================================================
+// Messages
+// ============================================================
+
+// Returned by create operations.
+message IdResponse {
+  string id = 1;
+}
+
+message Media {
+  string id = 1;
+  string event_id = 2;
+  string image_url = 3;
+}
+
+message CreateMediaRequest {
+  string event_id = 1;
+  string image_url = 2;
+  string custom_id = 3;
+}
+
+message ShowMediaRequest {
+  // Empty means show all media assets.
+  string id = 1;
+}
+
+message ShowMediaResponse {
+  repeated Media media = 1;
+}
+
+message UpdateMediaRequest {
+  string id = 1;
+
+  optional string event_id = 2;
+  optional string image_url = 3;
+}
+
+message DeleteMediaRequest {
+  string id = 1;
+}

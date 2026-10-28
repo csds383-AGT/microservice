@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package festhub.categories;
+
+import "google/protobuf/empty.proto";
+
+// ============================================================
+// Service
+// ============================================================
+
+service CategoryService {
+  rpc CreateCategory(CreateCategoryRequest) returns (IdResponse);
+  rpc ShowCategories(ShowCategoriesRequest) returns (ShowCategoriesResponse);
+  rpc UpdateCategory(UpdateCategoryRequest) returns (google.protobuf.Empty);
+  rpc DeleteCategory(DeleteCategoryRequest) returns (google.protobuf.Empty);
+}
+
+// ============================================================
+// Messages
+// ============================================================
+
+// Returned by create operations.
+message IdResponse {
+  string id = 1;
+}
+
+message Category {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  repeated string event_ids = 4;
+}
+
+message CreateCategoryRequest {
+  string name = 1;
+  string description = 2;
+  string custom_id = 3;
+  repeated string event_ids = 4;
+}
+
+message ShowCategoriesRequest {
+  // Empty means show all categories.
+  string id = 1;
+}
+
+message ShowCategoriesResponse {
+  repeated Category categories = 1;
+}
+
+message UpdateCategoryRequest {
+  string id = 1;
+
+  optional string name = 2;
+  optional string description = 3;
+
+  repeated string add_event_ids = 4;
+  repeated string remove_event_ids = 5;
+}
+
+message DeleteCategoryRequest {
+  string id = 1;
+}
