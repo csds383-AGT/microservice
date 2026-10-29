@@ -1,11 +1,6 @@
-from concurrent import futures
-import logging
-import os
 import sys
 from pathlib import Path
-from urllib.parse import unquote
 
-import grpc
 from google.protobuf import empty_pb2
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -16,28 +11,11 @@ if LOGIC_DIR.is_dir():
 import services
 import concerts_pb2
 import concerts_pb2_grpc
-import artists_pb2
-import artists_pb2_grpc
 import categories_pb2
 import categories_pb2_grpc
 import media_pb2
 import media_pb2_grpc
-
-PORT = int(os.getenv("BUSINESS_PORT", "50051"))
-# the address to listen on and the only address allowed to call us; docker-compose.yml sets these to the
-# logic and web containers' fixed IPs, and the defaults keep a server run outside Docker local to this machine
-BIND_ADDRESS = os.getenv("BIND_ADDRESS", "127.0.0.1")
-PRESENTATION_IP = os.getenv("PRESENTATION_IP", "127.0.0.1")
-
-def field(record, name, default=None):
-    """Read a field from a database namedtuple, object, or dictionary."""
-    if isinstance(record, dict):
-        return record.get(name, default)
-    return getattr(record, name, default)
-
-
-def string_id(value):
-    return "" if value is None else str(value)
+from common.server import field, invoke, serve, string_id
 
 
 def to_concert(record):
@@ -51,15 +29,6 @@ def to_concert(record):
         artist_ids=[string_id(x) for x in (field(record, "artist_ids", []) or [])],
         category_ids=[string_id(x) for x in (field(record, "category_ids", []) or [])],
         media_ids=[string_id(x) for x in (field(record, "media_ids", []) or [])],
-    )
-
-
-def to_artist(record):
-    return artists_pb2.Artist(
-        id=string_id(field(record, "id")),
-        name=field(record, "name", ""),
-        booking_contact=field(record, "booking_contact", ""),
-        event_ids=[string_id(x) for x in (field(record, "event_ids", []) or [])],
     )
 
 
@@ -78,42 +47,6 @@ def to_media(record):
         event_id=string_id(field(record, "event_id")),
         image_url=field(record, "image_url", ""),
     )
-
-
-def abort_for_error(context, error):
-    """Map known service errors to useful gRPC status codes.
-
-    FestHubError is the application's business-rule exception. Unexpected exceptions
-    are logged server-side and returned without leaking internal details.
-    """
-    message = str(error)
-    lowered = message.lower()
-
-    if isinstance(error, services.FestHubError):
-        if lowered.startswith("no ") and " with id " in lowered:
-            code = grpc.StatusCode.NOT_FOUND
-        elif any(phrase in lowered for phrase in (
-            "already exists", "already booked", "already in this category",
-        )):
-            code = grpc.StatusCode.ALREADY_EXISTS
-        else:
-            code = grpc.StatusCode.INVALID_ARGUMENT
-        context.abort(code, message)
-
-    if isinstance(error, (ValueError, TypeError)):
-        context.abort(grpc.StatusCode.INVALID_ARGUMENT, message)
-    if isinstance(error, LookupError):
-        context.abort(grpc.StatusCode.NOT_FOUND, message)
-
-    logging.exception("Unhandled error in gRPC request", exc_info=(type(error), error, error.__traceback__))
-    context.abort(grpc.StatusCode.INTERNAL, "Internal server error")
-
-
-def invoke(context, function, *args, **kwargs):
-    try:
-        return function(*args, **kwargs)
-    except Exception as error:
-        abort_for_error(context, error)
 
 
 class ConcertService(concerts_pb2_grpc.ConcertServiceServicer):
@@ -160,34 +93,23 @@ class ConcertService(concerts_pb2_grpc.ConcertServiceServicer):
         )
 
 
-class ArtistService(artists_pb2_grpc.ArtistServiceServicer):
-    def CreateArtist(self, request, context):
-        result = invoke(
-            context, services.create_artist,
-            name=request.name,
-            booking_contact=request.booking_contact,
-            custom_id=request.custom_id or None,
-            event_ids=list(request.event_ids),
-        )
-        return artists_pb2.IdResponse(id=string_id(result))
-
-    def ShowArtists(self, request, context):
-        records = invoke(context, services.find_artists, request.id or None)
-        return artists_pb2.ShowArtistsResponse(artists=[to_artist(x) for x in records])
-
-    def UpdateArtist(self, request, context):
-        invoke(
-            context, services.update_artist,
-            artist_id=request.id,
-            name=request.name if request.HasField("name") else None,
-            booking_contact=request.booking_contact if request.HasField("booking_contact") else None,
-            add_event_ids=list(request.add_event_ids),
-            remove_event_ids=list(request.remove_event_ids),
-        )
+class BookingService(concerts_pb2_grpc.BookingServiceServicer):
+    def BookArtist(self, request, context):
+        invoke(context, services.add_booking, request.event_id, request.artist_id)
         return empty_pb2.Empty()
 
-    def DeleteArtist(self, request, context):
-        invoke(context, services.delete_artist, request.id)
+    def UnbookArtist(self, request, context):
+        invoke(context, services.unbook_artist, request.event_id, request.artist_id)
+        return empty_pb2.Empty()
+
+    def ListBookings(self, request, context):
+        records = invoke(context, services.find_bookings, list(request.artist_ids))
+        return concerts_pb2.ListBookingsResponse(bookings=[
+            concerts_pb2.Booking(event_id=string_id(x.event_id), artist_id=string_id(x.artist_id)) for x in records
+        ])
+
+    def ForgetArtist(self, request, context):
+        invoke(context, services.forget_artist, request.artist_id)
         return empty_pb2.Empty()
 
 
@@ -250,49 +172,11 @@ class MediaService(media_pb2_grpc.MediaServiceServicer):
         return empty_pb2.Empty()
 
 
-def peer_ip(peer):
-    """Pull the IP out of context.peer(), e.g. "ipv4:172.30.83.10:41234" or "ipv6:%5B::1%5D:41234"."""
-    return unquote(peer.partition(":")[2]).rpartition(":")[0].strip("[]")
-
-
-class PresentationTierOnly(grpc.ServerInterceptor):
-    """Refuse every call that doesn't come from the presentation tier's IP address."""
-
-    def intercept_service(self, continuation, handler_call_details):
-        handler = continuation(handler_call_details)
-        if handler is None:
-            return None
-
-        def guarded(request, context):
-            caller = peer_ip(context.peer())
-            if caller != PRESENTATION_IP:
-                logging.warning("Rejected gRPC call %s from %s", handler_call_details.method, caller)
-                context.abort(grpc.StatusCode.PERMISSION_DENIED, "only the presentation tier may call this service")
-            return handler.unary_unary(request, context)
-
-        return grpc.unary_unary_rpc_method_handler(
-            guarded,
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )
-
-
-def serve():
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-    # one worker, because every request shares repository's single database connection
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=1), interceptors=[PresentationTierOnly()])
-    # all four services run in this one process until each gets its own container
-    concerts_pb2_grpc.add_ConcertServiceServicer_to_server(ConcertService(), server)
-    artists_pb2_grpc.add_ArtistServiceServicer_to_server(ArtistService(), server)
-    categories_pb2_grpc.add_CategoryServiceServicer_to_server(CategoryService(), server)
-    media_pb2_grpc.add_MediaServiceServicer_to_server(MediaService(), server)
-    bound_port = server.add_insecure_port(f"{BIND_ADDRESS}:{PORT}")
-    if bound_port == 0:
-        raise RuntimeError(f"Could not bind gRPC server to {BIND_ADDRESS}:{PORT}")
-    server.start()
-    logging.info("FestHub gRPC server listening on %s:%s, accepting calls only from %s", BIND_ADDRESS, PORT, PRESENTATION_IP)
-    server.wait_for_termination()
-
-
 if __name__ == "__main__":
-    serve()
+    serve(
+        "logic",
+        (concerts_pb2_grpc.add_ConcertServiceServicer_to_server, ConcertService()),
+        (concerts_pb2_grpc.add_BookingServiceServicer_to_server, BookingService()),
+        (categories_pb2_grpc.add_CategoryServiceServicer_to_server, CategoryService()),
+        (media_pb2_grpc.add_MediaServiceServicer_to_server, MediaService()),
+    )

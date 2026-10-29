@@ -1,29 +1,19 @@
 from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 from urllib.parse import urlsplit
-from uuid import UUID
 
-from email_validator import EmailNotValidError, validate_email
-
+import artists_pb2
+import artists_pb2_grpc
 import repository
+from common import peers
+from common.records import FestHubError, check_lengths, delete_record, find_records, insert, parse_id, require, update
 
-
-class FestHubError(Exception):
-    pass
+artists = peers.stub(artists_pb2_grpc.ArtistServiceStub, "ARTISTS")
 
 
 # ======================================================================
 # Input checks
 # ======================================================================
-
-def parse_id(custom_id):
-    if custom_id is None:
-        return None
-    try:
-        return str(UUID(custom_id))
-    except ValueError:
-        raise FestHubError("custom ID must be a valid UUID")
-
 
 def to_cents(price):
     try:
@@ -49,13 +39,6 @@ def is_url(value):
 # Business rules
 # ======================================================================
 
-def check_lengths(name, description=""):
-    if len(name) > 2000:
-        raise FestHubError("name must be 2000 characters or fewer")
-    if len(description) > 10000:
-        raise FestHubError("description must be 10000 characters or fewer")
-
-
 def check_concert(event):
     check_lengths(event.name, event.description)
     if event.available_tickets < 0:
@@ -64,14 +47,6 @@ def check_concert(event):
         raise FestHubError("ticket price must be more than 0")
     if event.available_tickets == 0 and event.ticket_price > 10_000:
         raise FestHubError("a sold out event (0 tickets) cannot cost more than $100.00")
-
-
-def check_artist(artist):
-    check_lengths(artist.name)
-    try:
-        validate_email(artist.booking_contact, check_deliverability=False)
-    except EmailNotValidError:
-        raise FestHubError("booking contact must be a valid email address")
 
 
 def check_category(category):
@@ -92,50 +67,19 @@ def check_artist_rules(artist_id):
 
 
 # ======================================================================
-# Shared helpers
-# ======================================================================
-
-def require(table, record_id, label):
-    record = repository.get(table, record_id)
-    if record is None:
-        raise FestHubError(f"no {label} with id {record_id}")
-    return record
-
-
-def find_records(table, record_id, label, order_by="name"):
-    rows = repository.find(table, record_id, order_by)
-    if record_id and not rows:
-        raise FestHubError(f"no {label} with id {record_id}")
-    return rows
-
-
-def insert(table, custom_id, record, duplicate_message):
-    record_id = repository.insert(table, custom_id, record)
-    if record_id is None:
-        raise FestHubError(duplicate_message)
-    return record_id
-
-
-def update(table, record_id, label, changes):
-    record = repository.update(table, record_id, changes)
-    if record is None:
-        raise FestHubError(f"no {label} with id {record_id}")
-    return record
-
-
-def delete_record(table, record_id, label):
-    with repository.transaction():
-        if not repository.delete(table, record_id):
-            raise FestHubError(f"no {label} with id {record_id}")
-
-
-# ======================================================================
 # Links between records
 # ======================================================================
 
-def book_artist(event_id, artist_id):
+def require_artist(artist_id):
+    if not artist_id:
+        raise FestHubError(f"no artist with id {artist_id}")
+    peers.call(artists.ShowArtists, artists_pb2.ShowArtistsRequest(id=artist_id))
+
+
+def book_artist(event_id, artist_id, artist_known=False):
     require("concert_events", event_id, "event")
-    require("artists", artist_id, "artist")
+    if not artist_known:
+        require_artist(artist_id)
     if not repository.link("event_artists", event_id, artist_id):
         raise FestHubError("that artist is already booked for this event")
 
@@ -228,38 +172,21 @@ def delete_concert(event_id):
 
 
 # ======================================================================
-# Artists
+# Bookings, for the artists service
 # ======================================================================
 
-def create_artist(name, booking_contact, custom_id=None, event_ids=()):
+def add_booking(event_id, artist_id):
     with repository.transaction():
-        custom_id = parse_id(custom_id)
-        artist = SimpleNamespace(name=name, booking_contact=booking_contact)
-        check_artist(artist)
-        artist_id = insert("artists", custom_id, artist, "an artist with that ID already exists")
-        for event_id in event_ids:
-            book_artist(event_id, artist_id)
-        check_artist_rules(artist_id)
-        return artist_id
-
-
-def find_artists(artist_id=None):
-    return find_records("artist_details", artist_id, "artist")
-
-
-def update_artist(artist_id, name=None, booking_contact=None, add_event_ids=(), remove_event_ids=()):
-    with repository.transaction():
-        changes = SimpleNamespace(name=name, booking_contact=booking_contact)
-        check_artist(update("artists", artist_id, "artist", changes))
-        for event_id in add_event_ids:
-            book_artist(event_id, artist_id)
-        for event_id in remove_event_ids:
-            unbook_artist(event_id, artist_id)
+        book_artist(event_id, artist_id, artist_known=True)
         check_artist_rules(artist_id)
 
 
-def delete_artist(artist_id):
-    delete_record("artists", artist_id, "artist")
+def find_bookings(artist_ids):
+    return repository.bookings(artist_ids)
+
+
+def forget_artist(artist_id):
+    repository.forget_artist(artist_id)
 
 
 # ======================================================================

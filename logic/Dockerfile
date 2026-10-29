@@ -11,6 +11,7 @@ RUN python -m grpc_tools.protoc \
     --grpc_python_out=. \
     protos/*.proto
 
+COPY common common
 COPY logic logic
 COPY backend-server.py .
 

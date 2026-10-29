@@ -3,9 +3,6 @@ VALUES (DEFAULT, 'Live at Grahams Garage', 'Bring a lawn chair', 40, 1000),
        ('eeeeeeee-0000-4000-8000-000000000001', 'Live at Aarons Basement', 'Thao on drums', 30, 500),
        ('eeeeeeee-0000-4000-8000-000000000002', 'CWRU Jammy Jam', 'CaseCash accepted', 200, 15000);
 
-INSERT INTO artists (id, name, booking_contact)
-VALUES ('aaaaaaaa-0000-4000-8000-000000000001', 'Graham Girone', 'graham@case.edu');
-
 INSERT INTO event_artists (event_id, artist_id)
 VALUES ('eeeeeeee-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000001'),
        ('eeeeeeee-0000-4000-8000-000000000002', 'aaaaaaaa-0000-4000-8000-000000000001');
