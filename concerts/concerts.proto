@@ -15,6 +15,13 @@ service ConcertService {
   rpc DeleteConcert(DeleteConcertRequest) returns (DeleteConcertResponse);
 }
 
+service BookingService {
+  rpc BookArtist(BookingRequest) returns (google.protobuf.Empty);
+  rpc UnbookArtist(BookingRequest) returns (google.protobuf.Empty);
+  rpc ListBookings(ListBookingsRequest) returns (ListBookingsResponse);
+  rpc ForgetArtist(ForgetArtistRequest) returns (google.protobuf.Empty);
+}
+
 // ============================================================
 // Messages
 // ============================================================
@@ -92,4 +99,26 @@ message DeleteConcertResponse {
 
   // Categories deleted because no events still use them.
   repeated string deleted_category_ids = 2;
+}
+
+message BookingRequest {
+  string event_id = 1;
+  string artist_id = 2;
+}
+
+message Booking {
+  string event_id = 1;
+  string artist_id = 2;
+}
+
+message ListBookingsRequest {
+  repeated string artist_ids = 1;
+}
+
+message ListBookingsResponse {
+  repeated Booking bookings = 1;
+}
+
+message ForgetArtistRequest {
+  string artist_id = 1;
 }
