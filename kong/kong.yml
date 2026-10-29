@@ -1,0 +1,41 @@
+_format_version: "3.0"
+
+services:
+  - name: web
+    url: http://web:5000
+    routes:
+      - name: web
+        protocols: [http]
+        paths: [/]
+
+  - name: concerts
+    url: grpc://logic:50051
+    routes:
+      - name: concerts
+        protocols: [grpc]
+        paths: [/festhub.concerts.ConcertService/]
+        strip_path: false
+
+  - name: artists
+    url: grpc://artists:50051
+    routes:
+      - name: artists
+        protocols: [grpc]
+        paths: [/festhub.artists.ArtistService/]
+        strip_path: false
+
+  - name: categories
+    url: grpc://logic:50051
+    routes:
+      - name: categories
+        protocols: [grpc]
+        paths: [/festhub.categories.CategoryService/]
+        strip_path: false
+
+  - name: media
+    url: grpc://logic:50051
+    routes:
+      - name: media
+        protocols: [grpc]
+        paths: [/festhub.media.MediaService/]
+        strip_path: false
